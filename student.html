@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Portal — Smart Attendance</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+</head>
+<body>
+<div class="page-glow"></div>
+<div class="container">
+
+    <a href="index.html" class="back">← Back</a>
+
+    <div class="page-header">
+        <h1>👨‍🎓 Student Portal</h1>
+        <p>Enter your details then scan the QR code</p>
+    </div>
+
+    <!-- Student Details -->
+    <div class="card">
+        <h2>Your Details</h2>
+        <div class="input-group">
+            <label>Full Name</label>
+            <input type="text" id="studentName" placeholder="e.g. Rahul Sharma">
+        </div>
+        <div class="input-group">
+            <label>Student ID</label>
+            <input type="text" id="studentId" placeholder="e.g. 2023CS101">
+        </div>
+        <button class="btn btn-blue" onclick="startScan()">📷 Scan QR to Mark Attendance</button>
+        <div id="studentMsg" class="message"></div>
+    </div>
+
+    <!-- Camera Scanner -->
+    <div class="card" id="scanCard" style="display:none;">
+        <h2>Scanning</h2>
+        <div id="cameraContainer"></div>
+        <canvas id="canvas"></canvas>
+        <p class="scan-hint">Point your camera at the teacher's QR code</p>
+        <button class="btn btn-secondary" onclick="stopScan()">✕ Cancel</button>
+    </div>
+
+    <!-- PIN + Color Entry -->
+    <div class="card" id="pinCard" style="display:none;">
+        <h2>Verify Attendance</h2>
+
+        <!-- PIN -->
+        <div class="input-group">
+            <label>4-Digit PIN (from the board)</label>
+            <input type="number" id="pinInput" class="pin-input"
+                   placeholder="0000" maxlength="4"
+                   oninput="if(this.value.length>4)this.value=this.value.slice(0,4)">
+        </div>
+
+        <!-- Color selection (shown if USE_COLOR_PIN = true) -->
+        <div id="colorSection" style="display:none;">
+            <hr class="divider">
+            <label>Select the color shown on the board</label>
+            <div class="color-buttons" id="colorButtons"></div>
+        </div>
+
+        <button class="btn btn-primary" id="confirmBtn" onclick="submitWithPIN()">
+            ✅ Confirm Attendance
+        </button>
+    </div>
+
+    <!-- Selfie Card -->
+    <div class="card" id="selfieCard" style="display:none;">
+        <h2>📸 Quick Selfie</h2>
+        <div id="selfieContainer"></div>
+        <canvas id="selfieCanvas"></canvas>
+        <p class="selfie-hint">Look at the camera and tap capture</p>
+        <div class="selfie-btn-row">
+            <button class="btn btn-primary" onclick="captureSelfie()">📸 Capture</button>
+            <button class="btn btn-secondary" onclick="skipSelfieAndSubmit()">Skip →</button>
+        </div>
+    </div>
+
+    <!-- Result -->
+    <div class="card" id="resultCard" style="display:none;">
+        <div id="result"></div>
+        <button class="btn btn-secondary" onclick="resetStudent()" style="margin-top:12px;">
+            ↩ Mark Another
+        </button>
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+<script>
+    function resetStudent() {
+        ['resultCard','pinCard','selfieCard'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        document.getElementById('studentMsg').style.display = 'none';
+        document.getElementById('pinInput').value = '';
+        document.getElementById('colorSection').style.display = 'none';
+        scannedData   = null;
+        selectedColor = null;
+    }
+</script>
+</body>
+</html>

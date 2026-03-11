@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Panel — Smart Attendance</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<div class="page-glow"></div>
+<div class="container">
+
+    <a href="index.html" class="back">← Back</a>
+
+    <div class="page-header">
+        <h1>👨‍🏫 Teacher Panel</h1>
+        <p>Create a session to start taking attendance</p>
+    </div>
+
+    <!-- Resume Banner (hidden until a stored session is detected) -->
+    <div class="resume-banner" id="resumeBanner" style="display:none;">
+        <p>
+            <strong>⚡ Unfinished session found</strong>
+            <span id="resumeInfo"></span>
+        </p>
+        <div class="resume-actions">
+            <button class="btn btn-yellow btn-sm" onclick="resumeSession()">Resume</button>
+            <button class="btn btn-secondary btn-sm" onclick="discardSession()">Discard</button>
+        </div>
+    </div>
+
+    <!-- Create Session -->
+    <div class="card">
+        <h2>New Session</h2>
+        <div class="input-group">
+            <label>Session Name</label>
+            <input type="text" id="sessionName" placeholder="e.g. Math Lecture 3">
+        </div>
+        <div class="input-group">
+            <label>Class / Course</label>
+            <input type="text" id="className" placeholder="e.g. CS-301">
+        </div>
+        <button class="btn btn-primary" onclick="createSession()">⚡ Start Session &amp; Generate QR</button>
+
+        <!-- Replace YOUR_SHEET_ID with the ID from your Google Sheet URL -->
+        <a href="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID_HERE"
+           target="_blank"
+           class="btn btn-secondary"
+           style="text-decoration:none;">
+            📊 View Full Attendance Sheet
+        </a>
+
+        <div id="teacherMsg" class="message"></div>
+    </div>
+
+    <!-- Live QR Card -->
+    <div class="card" id="qrCard" style="display:none;">
+        <h2>Live QR Code</h2>
+        <div class="qr-wrapper">
+            <div id="qrcode"></div>
+            <div class="pin-section">
+                <div class="pin-label">📌 PIN — show on projector</div>
+                <div class="pin-value" id="pinDisplay">----</div>
+                <div class="color-display" id="colorDisplay"></div>
+                <div class="countdown-bar-wrap">
+                    <div class="countdown-bar" id="countdownBar" style="width:100%;"></div>
+                </div>
+                <div class="countdown-text" id="countdown">Refreshing in 30s</div>
+            </div>
+            <p class="session-meta" id="sessionMeta"></p>
+        </div>
+        <button class="btn btn-danger" onclick="stopSession()" style="margin-top:16px;">
+            🛑 End Session &amp; View Results
+        </button>
+    </div>
+
+    <!-- Session Results -->
+    <div class="card" id="resultsCard" style="display:none;">
+        <h2>Session Results</h2>
+        <p id="resultsCount" style="color:var(--muted);font-size:13px;margin-bottom:14px;"></p>
+        <div class="table-wrap">
+            <table class="results-table">
+                <thead>
+                    <tr><th>Name</th><th>ID</th><th>Status</th><th>Time</th></tr>
+                </thead>
+                <tbody id="resultsBody">
+                    <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">End a session to see results here.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Selfie Grid -->
+        <div id="selfieSection" style="display:none; margin-top:20px;">
+            <hr class="divider">
+            <h2 style="margin-bottom:12px;">📸 Selfie Verification</h2>
+            <div class="selfie-grid" id="selfieGrid"></div>
+        </div>
+
+        <button class="btn btn-primary" onclick="newSession()" style="margin-top:16px;">
+            ⚡ Start New Session
+        </button>
+    </div>
+
+    <!-- Correction Form -->
+    <div class="card">
+        <h2>✏️ Correct a Record</h2>
+        <div class="input-group">
+            <label>Student ID</label>
+            <input type="text" id="correctionStudentId" placeholder="e.g. 2023CS101">
+        </div>
+        <div class="input-group">
+            <label>New Status</label>
+            <select id="correctionStatus" style="
+                width:100%; padding:12px 14px;
+                background:rgba(255,255,255,0.05);
+                border:1px solid var(--border); border-radius:var(--radius-sm);
+                color:var(--text); font-family:'Space Grotesk',sans-serif;
+                font-size:14px; outline:none;
+            ">
+                <option value="Present">Present</option>
+                <option value="Late">Late</option>
+                <option value="Absent">Absent</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>Session ID (auto-filled after session ends)</label>
+            <input type="text" id="correctionSessionId" placeholder="SES-...">
+        </div>
+        <button class="btn btn-blue" onclick="submitCorrection()">✅ Apply Correction</button>
+        <div id="correctionMsg" class="message"></div>
+    </div>
+
+    <!-- Manual Entry -->
+    <div class="card">
+        <h2>➕ Manual Entry (no phone)</h2>
+        <div class="input-group">
+            <label>Student Name</label>
+            <input type="text" id="manualName" placeholder="e.g. Rahul Sharma">
+        </div>
+        <div class="input-group">
+            <label>Student ID</label>
+            <input type="text" id="manualId" placeholder="e.g. 2023CS101">
+        </div>
+        <button class="btn btn-primary" onclick="submitManualEntry()">✅ Mark as Present</button>
+        <div id="manualMsg" class="message"></div>
+    </div>
+
+</div>
+<script src="script.js"></script>
+</body>
+</html>
