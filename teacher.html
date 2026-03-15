@@ -6,9 +6,106 @@
     <title>Teacher Panel — Smart Attendance</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        /* ---- FULLSCREEN OVERLAY ---- */
+        #qrOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        #qrOverlay.active { display: flex; }
+
+        #qrOverlayCode {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+        }
+        #qrOverlayCode img,
+        #qrOverlayCode canvas {
+            display: block;
+            width: 480px !important;
+            height: 480px !important;
+        }
+
+        .overlay-meta {
+            margin-top: 28px;
+            text-align: center;
+            color: white;
+        }
+        .overlay-pin {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 72px;
+            font-weight: 700;
+            color: #00f5a0;
+            letter-spacing: 16px;
+            text-indent: 16px;
+            line-height: 1;
+        }
+        .overlay-color {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            margin-top: 8px;
+        }
+        .overlay-bar-wrap {
+            width: 480px;
+            height: 6px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 99px;
+            margin-top: 16px;
+            overflow: hidden;
+        }
+        .overlay-bar {
+            height: 100%;
+            background: #00f5a0;
+            border-radius: 99px;
+            transition: width 1s linear;
+        }
+        .overlay-countdown {
+            font-size: 14px;
+            color: rgba(255,255,255,0.4);
+            margin-top: 8px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .overlay-hint {
+            position: fixed;
+            bottom: 24px;
+            font-size: 13px;
+            color: rgba(255,255,255,0.25);
+        }
+        .overlay-session {
+            font-size: 16px;
+            color: rgba(255,255,255,0.5);
+            margin-top: 6px;
+        }
+    </style>
 </head>
 <body>
 <div class="page-glow"></div>
+
+<!-- FULLSCREEN QR OVERLAY — click anywhere to close -->
+<div id="qrOverlay" onclick="closeFullscreen()">
+    <div id="qrOverlayCode"></div>
+    <div class="overlay-meta">
+        <div class="overlay-pin"    id="overlayPin">----</div>
+        <div class="overlay-color"  id="overlayColor"></div>
+        <div class="overlay-bar-wrap">
+            <div class="overlay-bar" id="overlayBar" style="width:100%;"></div>
+        </div>
+        <div class="overlay-countdown" id="overlayCountdown"></div>
+        <div class="overlay-session"   id="overlaySession"></div>
+    </div>
+    <div class="overlay-hint">Tap anywhere to exit fullscreen</div>
+</div>
+
 <div class="container">
 
     <a href="index.html" class="back">← Back</a>
@@ -18,7 +115,7 @@
         <p>Create a session to start taking attendance</p>
     </div>
 
-    <!-- Resume Banner (hidden until a stored session is detected) -->
+    <!-- Resume Banner -->
     <div class="resume-banner" id="resumeBanner" style="display:none;">
         <p>
             <strong>⚡ Unfinished session found</strong>
@@ -42,15 +139,12 @@
             <input type="text" id="className" placeholder="e.g. CS-301">
         </div>
         <button class="btn btn-primary" onclick="createSession()">⚡ Start Session &amp; Generate QR</button>
-
-        <!-- Replace YOUR_SHEET_ID with the ID from your Google Sheet URL -->
         <a href="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID_HERE"
            target="_blank"
            class="btn btn-secondary"
            style="text-decoration:none;">
             📊 View Full Attendance Sheet
         </a>
-
         <div id="teacherMsg" class="message"></div>
     </div>
 
@@ -61,16 +155,21 @@
             <div id="qrcode"></div>
             <div class="pin-section">
                 <div class="pin-label">📌 PIN — show on projector</div>
-                <div class="pin-value" id="pinDisplay">----</div>
+                <div class="pin-value"   id="pinDisplay">----</div>
                 <div class="color-display" id="colorDisplay"></div>
                 <div class="countdown-bar-wrap">
                     <div class="countdown-bar" id="countdownBar" style="width:100%;"></div>
                 </div>
-                <div class="countdown-text" id="countdown">Refreshing in 30s</div>
+                <div class="countdown-text" id="countdown">Refreshing in 300s</div>
             </div>
             <p class="session-meta" id="sessionMeta"></p>
         </div>
-        <button class="btn btn-danger" onclick="stopSession()" style="margin-top:16px;">
+
+        <!-- Fullscreen button — most important button for classroom use -->
+        <button class="btn btn-blue" onclick="openFullscreen()" style="margin-top:16px;">
+            🖥️ Show Fullscreen on Projector
+        </button>
+        <button class="btn btn-danger" onclick="stopSession()" style="margin-top:8px;">
             🛑 End Session &amp; View Results
         </button>
     </div>
@@ -89,14 +188,11 @@
                 </tbody>
             </table>
         </div>
-
-        <!-- Selfie Grid -->
         <div id="selfieSection" style="display:none; margin-top:20px;">
             <hr class="divider">
             <h2 style="margin-bottom:12px;">📸 Selfie Verification</h2>
             <div class="selfie-grid" id="selfieGrid"></div>
         </div>
-
         <button class="btn btn-primary" onclick="newSession()" style="margin-top:16px;">
             ⚡ Start New Session
         </button>
@@ -116,8 +212,7 @@
                 background:rgba(255,255,255,0.05);
                 border:1px solid var(--border); border-radius:var(--radius-sm);
                 color:var(--text); font-family:'Space Grotesk',sans-serif;
-                font-size:14px; outline:none;
-            ">
+                font-size:14px; outline:none;">
                 <option value="Present">Present</option>
                 <option value="Late">Late</option>
                 <option value="Absent">Absent</option>

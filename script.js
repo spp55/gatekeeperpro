@@ -1,7 +1,7 @@
 // ======================= CONFIG =======================
 const GOOGLE_SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycby3K40tiD3siohaYo1RjOzu_6lVYUyM_c7JRQ7FUyIhKemFH7CSco_-VlTs0H-naGCBWQ/exec';
-const WINDOW_SECONDS     = 30;    // QR rotates every 30s
-const GRACE_WINDOWS      = 3;     // Accept up to ~90s after scan
+const WINDOW_SECONDS     = 300;   // QR rotates every 300s
+const GRACE_WINDOWS      = 3;     // Accept up to ~900s after scan
 const GPS_RADIUS_METERS  = 100;   // Flag if outside this range
 const PRESENT_CUTOFF_MIN = 10;    // 0–10 min  → Present
 const LATE_CUTOFF_MIN    = 20;    // 10–20 min → Late  |  20+ → Blocked
@@ -200,20 +200,25 @@ function renderQR() {
     const color       = getSessionColor(win, currentSessionId);
     const encodedTime = encodeSessionTime(sessionStartTime, currentSessionId);
 
+    // Short keys = less data = less dense QR = easier to scan
     const payload = JSON.stringify({
-        sessionId:        currentSessionId,
-        sessionName:      currentSessionName,
-        className:        currentClassName,
-        window:           win,
-        teacherLat:       teacherLat,
-        teacherLng:       teacherLng,
-        encodedStartTime: encodedTime
+        si: currentSessionId,
+        sn: currentSessionName,
+        cn: currentClassName,
+        w:  win,
+        la: teacherLat,
+        ln: teacherLng,
+        t:  encodedTime
     });
 
     document.getElementById('qrcode').innerHTML = '';
     new QRCode(document.getElementById('qrcode'), {
-        text: payload, width: 200, height: 200,
-        colorDark: '#000000', colorLight: '#ffffff'
+        text:         payload,
+        width:        300,
+        height:       300,
+        colorDark:    '#000000',
+        colorLight:   '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
     });
 
     document.getElementById('pinDisplay').textContent = pin;
@@ -234,6 +239,79 @@ function renderQR() {
 }
 
 
+// ======================= TEACHER: FULLSCREEN =======================
+
+function openFullscreen() {
+    const overlay = document.getElementById('qrOverlay');
+    if (!overlay) return;
+
+    // Copy current QR into overlay
+    const src  = document.getElementById('qrcode');
+    const dest = document.getElementById('qrOverlayCode');
+    dest.innerHTML = src.innerHTML;
+
+    // Copy current PIN and colour
+    const pin   = document.getElementById('pinDisplay').textContent;
+    const color = document.getElementById('colorDisplay').textContent;
+    const colorStyle = document.getElementById('colorDisplay').style.color;
+    const meta  = document.getElementById('sessionMeta').innerHTML;
+
+    document.getElementById('overlayPin').textContent   = pin;
+    document.getElementById('overlayColor').textContent = color;
+    document.getElementById('overlayColor').style.color = colorStyle;
+    document.getElementById('overlaySession').innerHTML = meta;
+
+    // Sync countdown bar
+    const bar = document.getElementById('countdownBar');
+    document.getElementById('overlayBar').style.width = bar.style.width;
+
+    overlay.classList.add('active');
+
+    // Try to go truly fullscreen on the browser
+    try {
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+        }
+    } catch(e) {}
+}
+
+function closeFullscreen() {
+    const overlay = document.getElementById('qrOverlay');
+    if (overlay) overlay.classList.remove('active');
+    try {
+        if (document.fullscreenElement) document.exitFullscreen();
+    } catch(e) {}
+}
+
+// Keep overlay in sync when QR/PIN/colour updates
+const _origRenderQR = window._renderQRHook || null;
+function syncOverlay() {
+    const overlay = document.getElementById('qrOverlay');
+    if (!overlay || !overlay.classList.contains('active')) return;
+
+    const src  = document.getElementById('qrcode');
+    const dest = document.getElementById('qrOverlayCode');
+    dest.innerHTML = src.innerHTML;
+
+    const pin        = document.getElementById('pinDisplay').textContent;
+    const color      = document.getElementById('colorDisplay').textContent;
+    const colorStyle = document.getElementById('colorDisplay').style.color;
+    const bar        = document.getElementById('countdownBar');
+    const cntText    = document.getElementById('countdown').textContent;
+
+    document.getElementById('overlayPin').textContent      = pin;
+    document.getElementById('overlayColor').textContent    = color;
+    document.getElementById('overlayColor').style.color    = colorStyle;
+    document.getElementById('overlayBar').style.width      = bar.style.width;
+    document.getElementById('overlayCountdown').textContent = cntText;
+}
+
+// Close overlay with Escape key
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeFullscreen();
+});
+
+
 // ======================= TEACHER: COUNTDOWN =======================
 
 function startCountdown() {
@@ -248,6 +326,7 @@ function startCountdown() {
         if (el)  el.textContent  = `Refreshing in ${remaining}s`;
         if (bar) bar.style.width = pct + '%';
         if (currentWin !== lastWindowUpdated) renderQR();
+        syncOverlay();
     }, 1000);
 }
 
@@ -427,6 +506,13 @@ const submittedIds     = {};
 
 // ======================= STUDENT: START SCAN =======================
 
+// Check if BarcodeDetector is available (Chrome Android — same engine UPI uses)
+const USE_NATIVE_SCANNER = typeof BarcodeDetector !== 'undefined';
+let barcodeDetector = null;
+if (USE_NATIVE_SCANNER) {
+    barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+}
+
 async function startScan() {
     const name = document.getElementById('studentName').value.trim();
     const id   = document.getElementById('studentId').value.trim();
@@ -438,21 +524,40 @@ async function startScan() {
 
     try {
         videoStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }, audio: false
+            video: {
+                facingMode:  { ideal: 'environment' },
+                width:       { ideal: 1280 },
+                height:      { ideal: 720 },
+                focusMode:   { ideal: 'continuous' }
+            },
+            audio: false
         });
 
         videoElement = document.createElement('video');
         videoElement.srcObject = videoStream;
         videoElement.setAttribute('playsinline', true);
+        videoElement.setAttribute('muted', true);
         videoElement.autoplay = true;
 
         const container = document.getElementById('cameraContainer');
         container.innerHTML = '';
         container.appendChild(videoElement);
 
+        await new Promise(resolve => {
+            videoElement.onloadedmetadata = () => {
+                videoElement.play().then(resolve).catch(resolve);
+            };
+            setTimeout(resolve, 1500);
+        });
+
         show('scanCard');
         isScanning = true;
-        requestAnimationFrame(scanFrame);
+
+        if (USE_NATIVE_SCANNER) {
+            scanNative();   // fast path — hardware accelerated
+        } else {
+            requestAnimationFrame(scanJsQR);  // fallback
+        }
 
     } catch(err) {
         showMsg('studentMsg', '❌ Camera error. Please allow camera access.', 'error');
@@ -460,24 +565,55 @@ async function startScan() {
 }
 
 
-// ======================= STUDENT: SCAN FRAME =======================
+// ======================= NATIVE SCAN (BarcodeDetector) =======================
+// Same engine Chrome uses for UPI/Google Pay — near-instant on Android
 
-function scanFrame() {
+async function scanNative() {
+    if (!isScanning) return;
+    try {
+        const results = await barcodeDetector.detect(videoElement);
+        if (results && results.length > 0 && results[0].rawValue) {
+            stopScan();
+            handleScan(results[0].rawValue);
+            return;
+        }
+    } catch(e) {
+        // BarcodeDetector threw (e.g. video not ready) — just retry
+    }
+    if (isScanning) setTimeout(scanNative, 100);
+}
+
+
+// ======================= JSQR FALLBACK =======================
+// Used on browsers without BarcodeDetector (Safari, older Chrome desktop)
+
+function scanJsQR() {
     if (!isScanning) return;
     const canvas = document.getElementById('canvas');
     const ctx    = canvas.getContext('2d');
 
-    if (videoElement && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-        canvas.width  = videoElement.videoWidth;
-        canvas.height = videoElement.videoHeight;
+    if (videoElement &&
+        videoElement.readyState === videoElement.HAVE_ENOUGH_DATA &&
+        videoElement.videoWidth  > 0 &&
+        videoElement.videoHeight > 0) {
+
+        // Scan at half resolution — faster for jsQR, still readable
+        canvas.width  = Math.floor(videoElement.videoWidth  / 2);
+        canvas.height = Math.floor(videoElement.videoHeight / 2);
         ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-        const code = jsQR(
-            ctx.getImageData(0, 0, canvas.width, canvas.height).data,
-            canvas.width, canvas.height
-        );
-        if (code) { stopScan(); handleScan(code.data); return; }
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth'
+        });
+
+        if (code && code.data) {
+            stopScan();
+            handleScan(code.data);
+            return;
+        }
     }
-    requestAnimationFrame(scanFrame);
+    setTimeout(() => requestAnimationFrame(scanJsQR), 80);
 }
 
 
@@ -493,8 +629,20 @@ function stopScan() {
 // ======================= STUDENT: HANDLE SCANNED DATA =======================
 
 function handleScan(raw) {
+    alert('SCANNED: ' + raw); // DEBUG — remove after testing
     try {
-        const data = JSON.parse(raw);
+        const d = JSON.parse(raw);
+
+        // Support both short keys (new) and long keys (old) for compatibility
+        const data = {
+            sessionId:        d.si || d.sessionId,
+            sessionName:      d.sn || d.sessionName,
+            className:        d.cn || d.className,
+            window:           d.w  !== undefined ? d.w  : d.window,
+            teacherLat:       d.la !== undefined ? d.la : d.teacherLat,
+            teacherLng:       d.ln !== undefined ? d.ln : d.teacherLng,
+            encodedStartTime: d.t  !== undefined ? d.t  : d.encodedStartTime
+        };
 
         if (!data.sessionId || data.window === undefined) {
             showMsg('studentMsg', '❌ Invalid QR code. Ask your teacher to regenerate.', 'error');
