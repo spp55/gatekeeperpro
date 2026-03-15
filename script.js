@@ -629,7 +629,6 @@ function stopScan() {
 // ======================= STUDENT: HANDLE SCANNED DATA =======================
 
 function handleScan(raw) {
-    alert('SCANNED: ' + raw); // DEBUG — remove after testing
     try {
         const d = JSON.parse(raw);
 
